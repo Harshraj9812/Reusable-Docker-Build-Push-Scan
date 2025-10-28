@@ -7,6 +7,10 @@ on:
         description: "Full Docker image name (e.g. dockerusername/imagename)"
         required: true
         type: string
+      dockerhub_username:
+        description: "DockerHub username (public, not secret)"
+        required: true
+        type: string
       dockerfile_path:
         description: "Path to the Dockerfile"
         required: false
@@ -48,9 +52,6 @@ on:
         type: boolean
         default: true
     secrets:
-      dockerhub_username:
-        description: "DockerHub username"
-        required: true
       dockerhub_token:
         description: "DockerHub access token"
         required: true
@@ -100,7 +101,7 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ${{ inputs.registry }}
-          username: ${{ secrets.dockerhub_username }}
+          username: ${{ inputs.dockerhub_username }}
           password: ${{ secrets.dockerhub_token }}
 
       - name: Build Docker image
