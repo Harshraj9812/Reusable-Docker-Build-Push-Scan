@@ -3,6 +3,10 @@ name: Docker Build, Push and Scan
 on:
   workflow_call:
     inputs:
+      image_name:
+        description: "Full Docker image name (e.g. dockerusername/imagename)"
+        required: true
+        type: string
       dockerfile_path:
         description: "Path to the Dockerfile"
         required: false
@@ -18,10 +22,6 @@ on:
         required: false
         type: string
         default: "docker.io"
-      image_name:
-        description: "Docker image name (e.g. harshraj9812/my-app)"
-        required: true
-        type: string
       build_tag_prefix:
         description: "Prefix for build tag version"
         required: false
@@ -49,7 +49,7 @@ on:
         default: true
     secrets:
       dockerhub_username:
-        description: "DockerHub username (used only for login)"
+        description: "DockerHub username"
         required: true
       dockerhub_token:
         description: "DockerHub access token"
@@ -58,12 +58,13 @@ on:
       build_tag:
         description: "The generated build tag"
         value: ${{ jobs.build-and-push.outputs.build_tag }}
-      image_digest:
-        description: "The image digest"
-        value: ${{ jobs.build-and-push.outputs.image_digest }}
       full_image_name:
-        description: "Full image name without tag"
-        value: ${{ inputs.registry }}/${{ inputs.image_name }}  # Construct from inputs only
+        description: "Full image name with registry"
+        value: ${{ jobs.build-and-push.outputs.full_image_name }}
+
+env:
+  REGISTRY: ${{ inputs.registry }}
+  IMAGE_NAME: ${{ inputs.image_name }}
 
 jobs:
   build-and-push:
@@ -74,7 +75,7 @@ jobs:
 
     outputs:
       build_tag: ${{ steps.build_number.outputs.BUILD_TAG }}
-      image_digest: ${{ steps.push.outputs.digest }}
+      full_image_name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
 
     steps:
       - name: Checkout repository
@@ -82,19 +83,15 @@ jobs:
 
       - name: Generate build number
         id: build_number
-        shell: bash
         run: |
           BUILD_TAG="${{ inputs.build_tag_prefix }}.${{ github.run_number }}"
-          FULL_IMAGE_NAME="${{ inputs.registry }}/${{ inputs.image_name }}"
-          echo "BUILD_TAG=$BUILD_TAG" >> "$GITHUB_OUTPUT"
-          echo "FULL_IMAGE_NAME=$FULL_IMAGE_NAME" >> "$GITHUB_OUTPUT"
-
-          echo "### 🏗️ Build Information" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "**Build Tag:** \`$BUILD_TAG\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "**Run Number:** ${{ github.run_number }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "**Commit SHA:** \`${{ github.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "**Image Name:** \`$FULL_IMAGE_NAME\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "BUILD_TAG=$BUILD_TAG" >> $GITHUB_OUTPUT
+          echo "### 🏗️ Build Information" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Build Tag:** \`$BUILD_TAG\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Run Number:** ${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit SHA:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Image Name:** \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}\`" >> $GITHUB_STEP_SUMMARY
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -114,30 +111,29 @@ jobs:
           file: ${{ inputs.dockerfile_path }}
           load: true
           tags: |
-            ${{ steps.build_number.outputs.FULL_IMAGE_NAME }}:${{ steps.build_number.outputs.BUILD_TAG }}
-            ${{ inputs.push_latest && format('{0}:latest', steps.build_number.outputs.FULL_IMAGE_NAME) || '' }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.build_number.outputs.BUILD_TAG }}
+            ${{ inputs.push_latest && format('{0}/{1}:latest', env.REGISTRY, env.IMAGE_NAME) || '' }}
           cache-from: ${{ inputs.enable_cache && 'type=gha' || '' }}
           cache-to: ${{ inputs.enable_cache && 'type=gha,mode=max' || '' }}
 
       - name: Display build summary
-        shell: bash
         run: |
-          echo "## 📦 Docker Image Built Successfully" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "**Image Tags:**" >> "$GITHUB_STEP_SUMMARY"
-          echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "${{ steps.build_number.outputs.FULL_IMAGE_NAME }}:${{ steps.build_number.outputs.BUILD_TAG }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "## 📦 Docker Image Built Successfully" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Image Tags:**" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.build_number.outputs.BUILD_TAG }}" >> $GITHUB_STEP_SUMMARY
           if [[ "${{ inputs.push_latest }}" == "true" ]]; then
-            echo "${{ steps.build_number.outputs.FULL_IMAGE_NAME }}:latest" >> "$GITHUB_STEP_SUMMARY"
+            echo "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest" >> $GITHUB_STEP_SUMMARY
           fi
-          echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
 
       - name: Scan image with Docker Scout
         id: scout_scan
         uses: docker/scout-action@v1
         with:
           command: cves
-          image: ${{ steps.build_number.outputs.FULL_IMAGE_NAME }}:${{ steps.build_number.outputs.BUILD_TAG }}
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.build_number.outputs.BUILD_TAG }}
           only-severities: ${{ inputs.scout_severities }}
           write-comment: false
           summary: true
@@ -147,61 +143,58 @@ jobs:
         uses: docker/scout-action@v1
         with:
           command: quickview
-          image: ${{ steps.build_number.outputs.FULL_IMAGE_NAME }}:${{ steps.build_number.outputs.BUILD_TAG }}
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.build_number.outputs.BUILD_TAG }}
           write-comment: false
           summary: true
 
       - name: Push to Docker Hub
         id: push
-        shell: bash
         run: |
-          echo "## 🚀 Pushing Image to Docker Hub" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          docker push "${{ steps.build_number.outputs.FULL_IMAGE_NAME }}:${{ steps.build_number.outputs.BUILD_TAG }}"
+          echo "## 🚀 Pushing Image to Docker Hub" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.build_number.outputs.BUILD_TAG }}
           if [[ "${{ inputs.push_latest }}" == "true" ]]; then
-            docker push "${{ steps.build_number.outputs.FULL_IMAGE_NAME }}:latest"
+            docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
           fi
-          echo "✅ Successfully pushed images to Docker Hub" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "**Registry:** \`${{ inputs.registry }}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "**Repository:** \`${{ inputs.image_name }}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "**Pushed Tags:**" >> "$GITHUB_STEP_SUMMARY"
-          echo '```
-          echo "${{ steps.build_number.outputs.FULL_IMAGE_NAME }}:${{ steps.build_number.outputs.BUILD_TAG }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "✅ Successfully pushed images to Docker Hub" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Registry:** \`${{ env.REGISTRY }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Repository:** \`${{ env.IMAGE_NAME }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Pushed Tags:**" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.build_number.outputs.BUILD_TAG }}" >> $GITHUB_STEP_SUMMARY
           if [[ "${{ inputs.push_latest }}" == "true" ]]; then
-            echo "${{ steps.build_number.outputs.FULL_IMAGE_NAME }}:latest" >> "$GITHUB_STEP_SUMMARY"
+            echo "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest" >> $GITHUB_STEP_SUMMARY
           fi
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
 
       - name: Create Git tag
         if: ${{ inputs.create_git_tag }}
         id: create_tag
-        shell: bash
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
           git tag -a "${{ steps.build_number.outputs.BUILD_TAG }}" -m "Release ${{ steps.build_number.outputs.BUILD_TAG }}"
           git push origin "${{ steps.build_number.outputs.BUILD_TAG }}"
-          echo "## 🏷️ Git Tag Created" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "**Tag:** \`${{ steps.build_number.outputs.BUILD_TAG }}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "**Repository:** ${{ github.repository }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "## 🏷️ Git Tag Created" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag:** \`${{ steps.build_number.outputs.BUILD_TAG }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Repository:** ${{ github.repository }}" >> $GITHUB_STEP_SUMMARY
 
       - name: Final Summary
-        shell: bash
         run: |
-          echo "## ✨ Workflow Completed Successfully" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "### Summary" >> "$GITHUB_STEP_SUMMARY"
-          echo "- ✅ Docker image built with tag \`${{ steps.build_number.outputs.BUILD_TAG }}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- ✅ Image pushed to Docker Hub" >> "$GITHUB_STEP_SUMMARY"
+          echo "## ✨ Workflow Completed Successfully" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Docker image built with tag \`${{ steps.build_number.outputs.BUILD_TAG }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Image pushed to Docker Hub" >> $GITHUB_STEP_SUMMARY
           if [[ "${{ inputs.create_git_tag }}" == "true" ]]; then
-            echo "- ✅ Git tag created: \`${{ steps.build_number.outputs.BUILD_TAG }}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- ✅ Git tag created: \`${{ steps.build_number.outputs.BUILD_TAG }}\`" >> $GITHUB_STEP_SUMMARY
           fi
-          echo "- ✅ Security scan completed with Docker Scout" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "### Pull Command" >> "$GITHUB_STEP_SUMMARY"
-          echo '```
-          echo "docker pull ${{ steps.build_number.outputs.FULL_IMAGE_NAME }}:${{ steps.build_number.outputs.BUILD_TAG }}" >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "- ✅ Security scan completed with Docker Scout" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Pull Command" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.build_number.outputs.BUILD_TAG }}" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
