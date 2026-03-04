@@ -101,8 +101,14 @@ jobs:
         run: |
           if [[ "${{ github.ref_name }}" == "${{ steps.repo_info.outputs.DEFAULT_BRANCH }}" ]]; then
             BUILD_TAG="${{ inputs.build_tag_prefix }}.${{ github.run_number }}"
+            PUSH_STATUS="🚀 Will be pushed"
           else
             BUILD_TAG="feature-${{ inputs.build_tag_prefix }}.${{ github.run_number }}"
+            if [[ "${{ inputs.push_feature_branch }}" == "true" ]]; then
+              PUSH_STATUS="🚀 Will be pushed"
+            else
+              PUSH_STATUS="🏠 Local build only"
+            fi
           fi
           echo "BUILD_TAG=$BUILD_TAG" >> $GITHUB_OUTPUT
 
@@ -113,8 +119,7 @@ jobs:
             echo "|-------|-------|"
             echo "| **Build Tag** | \`$BUILD_TAG\` |"
             echo "| **Branch** | \`${{ github.ref_name }}\` |"
-            echo "| **Run Number** | ${{ github.run_number }} |"
-            echo "| **Commit SHA** | \`${{ github.sha }}\` |"
+            echo "| **Push Status** | $PUSH_STATUS |"
             echo "| **Image Name** | \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}\` |"
             echo ""
           } | tee -a "$GITHUB_STEP_SUMMARY" >> "$NOTES"
@@ -145,7 +150,11 @@ jobs:
       - name: Display build summary
         run: |
           {
-            echo "## 📦 Docker Image Built Successfully"
+            if [[ "${{ github.ref_name }}" == "${{ steps.repo_info.outputs.DEFAULT_BRANCH }}" || "${{ inputs.push_feature_branch }}" == "true" ]]; then
+              echo "## 📦 Docker Image Built & Ready to Push"
+            else
+              echo "## 📦 Docker Image Built Locally (No Push)"
+            fi
             echo ""
             echo "**Image Tags:**"
             echo "\`\`\`"
