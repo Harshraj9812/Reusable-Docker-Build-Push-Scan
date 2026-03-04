@@ -95,7 +95,8 @@ jobs:
 | `registry` | `string` | `"docker.io"` | Container registry URL |
 | `build_tag_prefix` | `string` | `"v1"` | Prefix for build tag version |
 | `push_latest` | `boolean` | `true` | Whether to push latest tag |
-| `create_git_tag` | `boolean` | `true` | Whether to create a git tag |
+| `push_feature_branch` | `boolean` | `false` | Whether to push images built from feature branches |
+| `create_git_tag` | `boolean` | `true` | Whether to create a git tag (default branch only) |
 | `scout_severities` | `string` | `"critical,high,medium"` | Docker Scout severity levels |
 | `enable_cache` | `boolean` | `true` | Enable GitHub Actions cache |
 
@@ -209,14 +210,14 @@ The workflow employs an intelligent versioning strategy designed for both produc
 - **Feature Branches**: Uses the pattern `feature-{build_tag_prefix}.{github.run_number}` (e.g., `feature-v1.42`)
 
 ### GitHub Releases
-- **Automated Creation**: When `create_git_tag` is enabled, a GitHub Release is automatically created for every build.
+- **Automated Creation**: When `create_git_tag` is enabled, a GitHub Release is automatically created for builds on the **default branch**.
 - **Auto-Changelog**: Release notes are automatically generated based on pull request descriptions and commit messages.
-- **Pre-releases**: Build from non-default branches (like feature branches) are automatically marked as **Pre-release** in GitHub.
-- **Traceability**: Every Docker image tag corresponds to a matching Git tag and GitHub Release.
+- **Traceability**: Every production Docker image tag corresponds to a matching Git tag and GitHub Release.
 
 ### Docker Tagging
 - **Specific Version**: Every build is tagged with its unique version string.
 - **Latest Tag**: The `:latest` tag is only updated and pushed for builds on the **default branch**.
+- **Feature Pushes**: By default, images from feature branches are **not** pushed to the registry unless `push_feature_branch` is set to `true`.
 
 ## 🐛 Troubleshooting
 
