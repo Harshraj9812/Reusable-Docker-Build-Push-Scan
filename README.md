@@ -10,11 +10,12 @@ A comprehensive and reusable GitHub Actions workflow for building, pushing, and 
 
 - 🐳 **Docker Build & Push**: Automated Docker image building and pushing to registries
 - 🔒 **Security Scanning**: Integrated Docker Scout vulnerability scanning
-- 🏷️ **Auto Tagging**: Automatic versioning with customizable tag prefixes
-- 📊 **Detailed Reporting**: Rich workflow summaries and build information
+- 🏷️ **Auto Tagging**: Intelligent versioning for both default and feature branches
+- 🚀 **GitHub Releases**: Automated release creation with auto-generated changelogs
+- 📊 **Detailed Reporting**: Rich workflow summaries and integrated build information
 - ⚡ **Build Caching**: GitHub Actions cache integration for faster builds
-- 🎯 **Flexible Configuration**: Extensive customization options
-- 🔄 **Git Integration**: Optional automatic Git tag creation
+- 🎯 **Flexible Configuration**: Extensive customization options via inputs and secrets
+- 🔄 **Git Integration**: Optional automatic Git tag and release management
 
 ## 🚀 Quick Start
 
@@ -139,36 +140,34 @@ This workflow includes comprehensive security scanning using Docker Scout:
 
 - **Vulnerability Detection**: Scans for known CVEs in your images
 - **Severity Filtering**: Configurable severity levels (critical, high, medium, low)
-- **Detailed Reports**: Rich security reports in workflow summaries
-- **Quick Overview**: Security posture at a glance
+- **Integrated Summaries**: View scan results directly in the GitHub Actions run summary
+- **Quick Overview**: Real-time security posture assessment during the build process
 
 ### Security Best Practices
 
 - Uses secure authentication with DockerHub tokens
-- Minimal required permissions
+- Minimal required permissions (`contents: write`, `packages: write`)
 - No secrets exposure in logs
-- Automated vulnerability scanning
-- Optional multi-stage scanning
+- Automated vulnerability scanning for every build
 
 ## 📊 Workflow Outputs
 
 The workflow provides comprehensive reporting:
 
 ### Build Information
-- Build tag and run number
-- Commit SHA and image details
-- Registry and repository information
+- **Build Tag**: Unique identifier for the build
+- **Branch/Commit**: Contextual information about the source code
+- **Run Metadata**: Link to the specific GitHub Actions run
 
 ### Security Scan Results
-- Vulnerability count by severity
-- Detailed CVE information
-- Remediation recommendations
-- Security score and overview
+- **Summary**: High-level overview of found vulnerabilities
+- **Links**: Direct access to full Docker Scout reports in the Actions summary
+- **Continuous Monitoring**: Automatic scanning on every push
 
 ### Push Details
-- Successfully pushed tags
-- Pull commands for easy access
-- Registry URLs and metadata
+- **Tags**: All successfully pushed image tags (including `:latest` if applicable)
+- **Pull Command**: Ready-to-use command to pull the newly built image
+- **Registry Info**: Detailed information about the target container registry
 
 ## 🎯 Use Cases
 
@@ -203,12 +202,21 @@ with:
 
 ## 🔄 Versioning Strategy
 
-The workflow uses automatic versioning:
+The workflow employs an intelligent versioning strategy designed for both production and development environments.
 
-- **Format**: `{build_tag_prefix}.{github.run_number}`
-- **Example**: `v1.42`, `release.123`, `staging.56`
-- **Git Tags**: Optionally creates corresponding Git tags
-- **Latest Tag**: Optionally pushes `:latest` tag
+### Tag Formats
+- **Default Branch**: Uses the pattern `{build_tag_prefix}.{github.run_number}` (e.g., `v1.42`)
+- **Feature Branches**: Uses the pattern `feature-{build_tag_prefix}.{github.run_number}` (e.g., `feature-v1.42`)
+
+### GitHub Releases
+- **Automated Creation**: When `create_git_tag` is enabled, a GitHub Release is automatically created for every build.
+- **Auto-Changelog**: Release notes are automatically generated based on pull request descriptions and commit messages.
+- **Pre-releases**: Build from non-default branches (like feature branches) are automatically marked as **Pre-release** in GitHub.
+- **Traceability**: Every Docker image tag corresponds to a matching Git tag and GitHub Release.
+
+### Docker Tagging
+- **Specific Version**: Every build is tagged with its unique version string.
+- **Latest Tag**: The `:latest` tag is only updated and pushed for builds on the **default branch**.
 
 ## 🐛 Troubleshooting
 
