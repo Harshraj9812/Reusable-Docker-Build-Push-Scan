@@ -68,7 +68,7 @@ env:
   IMAGE_NAME: ${{ inputs.image_name }}
 
 jobs:
-  build-and-push:
+  build-scan-and-push:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -82,14 +82,27 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Get default branch
+        id: repo_info
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          DEFAULT_BRANCH=$(gh api repos/${{ github.repository }} --jq .default_branch)
+          echo "DEFAULT_BRANCH=$DEFAULT_BRANCH" >> $GITHUB_OUTPUT
+
       - name: Generate build number
         id: build_number
         run: |
-          BUILD_TAG="${{ inputs.build_tag_prefix }}.${{ github.run_number }}"
+          if [[ "${{ github.ref_name }}" == "${{ steps.repo_info.outputs.DEFAULT_BRANCH }}" ]]; then
+            BUILD_TAG="${{ inputs.build_tag_prefix }}.${{ github.run_number }}"
+          else
+            BUILD_TAG="feature-${{ inputs.build_tag_prefix }}.${{ github.run_number }}"
+          fi
           echo "BUILD_TAG=$BUILD_TAG" >> $GITHUB_OUTPUT
           echo "### 🏗️ Build Information" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Build Tag:** \`$BUILD_TAG\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Run Number:** ${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
           echo "**Commit SHA:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Image Name:** \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}\`" >> $GITHUB_STEP_SUMMARY
@@ -113,7 +126,7 @@ jobs:
           load: true
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.build_number.outputs.BUILD_TAG }}
-            ${{ inputs.push_latest && format('{0}/{1}:latest', env.REGISTRY, env.IMAGE_NAME) || '' }}
+            ${{ inputs.push_latest && github.ref_name == steps.repo_info.outputs.DEFAULT_BRANCH && format('{0}/{1}:latest', env.REGISTRY, env.IMAGE_NAME) || '' }}
           cache-from: ${{ inputs.enable_cache && 'type=gha' || '' }}
           cache-to: ${{ inputs.enable_cache && 'type=gha,mode=max' || '' }}
 
@@ -124,7 +137,7 @@ jobs:
           echo "**Image Tags:**" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           echo "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.build_number.outputs.BUILD_TAG }}" >> $GITHUB_STEP_SUMMARY
-          if [[ "${{ inputs.push_latest }}" == "true" ]]; then
+          if [[ "${{ inputs.push_latest }}" == "true" && "${{ github.ref_name }}" == "${{ steps.repo_info.outputs.DEFAULT_BRANCH }}" ]]; then
             echo "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest" >> $GITHUB_STEP_SUMMARY
           fi
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
@@ -154,7 +167,7 @@ jobs:
           echo "## 🚀 Pushing Image to Docker Hub" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.build_number.outputs.BUILD_TAG }}
-          if [[ "${{ inputs.push_latest }}" == "true" ]]; then
+          if [[ "${{ inputs.push_latest }}" == "true" && "${{ github.ref_name }}" == "${{ steps.repo_info.outputs.DEFAULT_BRANCH }}" ]]; then
             docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
           fi
           echo "✅ Successfully pushed images to Docker Hub" >> $GITHUB_STEP_SUMMARY
@@ -165,25 +178,35 @@ jobs:
           echo "**Pushed Tags:**" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           echo "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.build_number.outputs.BUILD_TAG }}" >> $GITHUB_STEP_SUMMARY
-          if [[ "${{ inputs.push_latest }}" == "true" ]]; then
+          if [[ "${{ inputs.push_latest }}" == "true" && "${{ github.ref_name }}" == "${{ steps.repo_info.outputs.DEFAULT_BRANCH }}" ]]; then
             echo "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest" >> $GITHUB_STEP_SUMMARY
           fi
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
 
+      - name: Prepare Release Body
+        if: ${{ inputs.create_git_tag }}
+        run: |
+          cp "$GITHUB_STEP_SUMMARY" release-notes.md
+
       - name: Create Release
         if: ${{ inputs.create_git_tag }}
         id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          body_path: release-notes.md
+          tag_name: ${{ steps.build_number.outputs.BUILD_TAG }}
+          name: Release ${{ steps.build_number.outputs.BUILD_TAG }}
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          RELEASE_URL=$(gh release create ${{ steps.build_number.outputs.BUILD_TAG }} \
-            --title "Release ${{ steps.build_number.outputs.BUILD_TAG }}" \
-            --notes-file ${{ env.GITHUB_STEP_SUMMARY }})
-          echo "RELEASE_URL=$RELEASE_URL" >> $GITHUB_OUTPUT
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-          echo "## 🏷️ Release Created" >> $GITHUB_STEP_SUMMARY
+      - name: Update Summary with Release Info
+        if: ${{ inputs.create_git_tag }}
+        run: |
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Release:** [$RELEASE_URL]($RELEASE_URL)" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "## 🏷️ Release Created" >> $GITHUB_STEP_SUMMARY
+          echo "A new release has been created." >> $GITHUB_STEP_SUMMARY
+          echo "**Release URL:** ${{ steps.create_release.outputs.url }}" >> $GITHUB_STEP_SUMMARY
 
       - name: Final Summary
         run: |
@@ -193,7 +216,7 @@ jobs:
           echo "- ✅ Docker image built with tag \`${{ steps.build_number.outputs.BUILD_TAG }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- ✅ Image pushed to Docker Hub" >> $GITHUB_STEP_SUMMARY
           if [[ "${{ inputs.create_git_tag }}" == "true" ]]; then
-            echo "- ✅ Release created: [${{ steps.build_number.outputs.BUILD_TAG }}](${{ steps.create_release.outputs.RELEASE_URL }})" >> $GITHUB_STEP_SUMMARY
+            echo "- ✅ Release created: [${{ steps.build_number.outputs.BUILD_TAG }}](${{ steps.create_release.outputs.url }})" >> $GITHUB_STEP_SUMMARY
           fi
           echo "- ✅ Security scan completed with Docker Scout" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
