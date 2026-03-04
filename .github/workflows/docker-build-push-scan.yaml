@@ -58,10 +58,10 @@ on:
     outputs:
       build_tag:
         description: "The generated build tag"
-        value: ${{ jobs.build-and-push.outputs.build_tag }}
+        value: ${{ jobs.build-scan-and-push.outputs.build_tag }}
       full_image_name:
         description: "Full image name with registry"
-        value: ${{ jobs.build-and-push.outputs.full_image_name }}
+        value: ${{ jobs.build-scan-and-push.outputs.full_image_name }}
 
 env:
   REGISTRY: ${{ inputs.registry }}
@@ -99,13 +99,18 @@ jobs:
             BUILD_TAG="feature-${{ inputs.build_tag_prefix }}.${{ github.run_number }}"
           fi
           echo "BUILD_TAG=$BUILD_TAG" >> $GITHUB_OUTPUT
+
+          # ── Section 1: Build Info ──────────────────────────────────────
           echo "### 🏗️ Build Information" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Build Tag:** \`$BUILD_TAG\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Branch:** \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Run Number:** ${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Commit SHA:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Image Name:** \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Build Tag** | \`$BUILD_TAG\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Branch** | \`${{ github.ref_name }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Run Number** | ${{ github.run_number }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Commit SHA** | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Image Name** | \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -132,6 +137,7 @@ jobs:
 
       - name: Display build summary
         run: |
+          # ── Section 2: Image Tags ──────────────────────────────────────
           echo "## 📦 Docker Image Built Successfully" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Image Tags:**" >> $GITHUB_STEP_SUMMARY
@@ -141,6 +147,7 @@ jobs:
             echo "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest" >> $GITHUB_STEP_SUMMARY
           fi
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
 
       - name: Scan image with Docker Scout
         id: scout_scan
@@ -150,7 +157,8 @@ jobs:
           image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.build_number.outputs.BUILD_TAG }}
           only-severities: ${{ inputs.scout_severities }}
           write-comment: false
-          summary: false
+          # ✅ summary: true writes Scout CVE results directly to $GITHUB_STEP_SUMMARY
+          summary: true
 
       - name: Docker Scout quickview
         id: scout_quickview
@@ -159,22 +167,27 @@ jobs:
           command: quickview
           image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.build_number.outputs.BUILD_TAG }}
           write-comment: false
-          summary: false
+          # ✅ summary: true writes Scout quickview directly to $GITHUB_STEP_SUMMARY
+          summary: true
 
       - name: Push to Docker Hub
-        if: false
         id: push
         run: |
+          # ── Section 3: Push Info ───────────────────────────────────────
           echo "## 🚀 Pushing Image to Docker Hub" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+
           docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.build_number.outputs.BUILD_TAG }}
           if [[ "${{ inputs.push_latest }}" == "true" && "${{ github.ref_name }}" == "${{ steps.repo_info.outputs.DEFAULT_BRANCH }}" ]]; then
             docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
           fi
+
           echo "✅ Successfully pushed images to Docker Hub" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Registry:** \`${{ env.REGISTRY }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Repository:** \`${{ env.IMAGE_NAME }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Registry** | \`${{ env.REGISTRY }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Repository** | \`${{ env.IMAGE_NAME }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Pushed Tags:**" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
@@ -183,40 +196,44 @@ jobs:
             echo "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest" >> $GITHUB_STEP_SUMMARY
           fi
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-
-      - name: Create Release
-        if: ${{ inputs.create_git_tag }}
-        id: create_release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          RELEASE_URL=$(cat "$GITHUB_STEP_SUMMARY" | gh release create ${{ steps.build_number.outputs.BUILD_TAG }} \
-            --title "Release ${{ steps.build_number.outputs.BUILD_TAG }}" \
-            --notes-file -)
-          echo "RELEASE_URL=$RELEASE_URL" >> $GITHUB_OUTPUT
-
-      - name: Update Summary with Release Info
-        if: ${{ inputs.create_git_tag }}
-        run: |
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "---" >> $GITHUB_STEP_SUMMARY
-          echo "## 🏷️ Release Created" >> $GITHUB_STEP_SUMMARY
-          echo "A new release has been created." >> $GITHUB_STEP_SUMMARY
-          echo "**Release URL:** ${{ steps.create_release.outputs.url }}" >> $GITHUB_STEP_SUMMARY
 
       - name: Final Summary
+        # ✅ This runs BEFORE Create Release so all content is in the file
         run: |
+          # ── Section 4: Final Summary ───────────────────────────────────
+          echo "---" >> $GITHUB_STEP_SUMMARY
           echo "## ✨ Workflow Completed Successfully" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Summary" >> $GITHUB_STEP_SUMMARY
           echo "- ✅ Docker image built with tag \`${{ steps.build_number.outputs.BUILD_TAG }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- ✅ Image pushed to Docker Hub" >> $GITHUB_STEP_SUMMARY
-          if [[ "${{ inputs.create_git_tag }}" == "true" ]]; then
-            echo "- ✅ Release created: [${{ steps.build_number.outputs.BUILD_TAG }}](${{ steps.create_release.outputs.url }})" >> $GITHUB_STEP_SUMMARY
-          fi
           echo "- ✅ Security scan completed with Docker Scout" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Pull Command" >> $GITHUB_STEP_SUMMARY
+          echo "### 🐳 Pull Command" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
           echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.build_number.outputs.BUILD_TAG }}" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+      - name: Create Release
+        # ✅ Runs LAST — $GITHUB_STEP_SUMMARY now has ALL content from above steps
+        if: ${{ inputs.create_git_tag }}
+        id: create_release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Copy summary to workspace so gh can reliably read it
+          cp "$GITHUB_STEP_SUMMARY" "$GITHUB_WORKSPACE/release-notes.md"
+
+          RELEASE_URL=$(gh release create ${{ steps.build_number.outputs.BUILD_TAG }} \
+            --title "Release ${{ steps.build_number.outputs.BUILD_TAG }}" \
+            --notes-file "$GITHUB_WORKSPACE/release-notes.md")
+
+          echo "RELEASE_URL=$RELEASE_URL" >> $GITHUB_OUTPUT
+
+          # Append release URL back to summary (this won't go into release body, 
+          # but it appears in the Actions tab summary for traceability)
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "## 🏷️ Release Created" >> $GITHUB_STEP_SUMMARY
+          echo "**Release URL:** $RELEASE_URL" >> $GITHUB_STEP_SUMMARY
