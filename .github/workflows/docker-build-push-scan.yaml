@@ -150,7 +150,7 @@ jobs:
           image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.build_number.outputs.BUILD_TAG }}
           only-severities: ${{ inputs.scout_severities }}
           write-comment: false
-          summary: true
+          summary: false
 
       - name: Docker Scout quickview
         id: scout_quickview
@@ -159,9 +159,10 @@ jobs:
           command: quickview
           image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.build_number.outputs.BUILD_TAG }}
           write-comment: false
-          summary: true
+          summary: false
 
       - name: Push to Docker Hub
+        if: false
         id: push
         run: |
           echo "## 🚀 Pushing Image to Docker Hub" >> $GITHUB_STEP_SUMMARY
@@ -182,20 +183,6 @@ jobs:
             echo "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest" >> $GITHUB_STEP_SUMMARY
           fi
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-
-      - name: Debug Summary File
-        if: ${{ inputs.create_git_tag }}
-        run: |
-          echo "--- Debugging Summary File ---"
-          echo "Current directory: $(pwd)"
-          echo "Summary file path: $GITHUB_STEP_SUMMARY"
-          echo "--- Summary file content ---"
-          cat "$GITHUB_STEP_SUMMARY"
-          echo "--- End of summary content ---"
-          if [ ! -s "$GITHUB_STEP_SUMMARY" ]; then
-            echo "Error: Summary file is empty or does not exist."
-            exit 1
-          fi
 
       - name: Create Release
         if: ${{ inputs.create_git_tag }}
