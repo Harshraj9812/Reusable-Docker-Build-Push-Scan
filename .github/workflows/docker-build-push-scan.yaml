@@ -36,6 +36,11 @@ on:
         required: false
         type: boolean
         default: true
+      push_feature_branch:
+        description: "Whether to push images built from feature branches"
+        required: false
+        type: boolean
+        default: false
       create_git_tag:
         description: "Whether to create a git tag"
         required: false
@@ -181,6 +186,7 @@ jobs:
           } >> "$NOTES"
 
       - name: Push to Docker Hub
+        if: ${{ github.ref_name == steps.repo_info.outputs.DEFAULT_BRANCH || inputs.push_feature_branch }}
         id: push
         run: |
           docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.build_number.outputs.BUILD_TAG }}
@@ -214,13 +220,19 @@ jobs:
             echo ""
             echo "### Summary"
             echo "- ✅ Docker image built with tag \`${{ steps.build_number.outputs.BUILD_TAG }}\`"
-            echo "- ✅ Image pushed to Docker Hub"
+            if [[ "${{ github.ref_name }}" == "${{ steps.repo_info.outputs.DEFAULT_BRANCH }}" || "${{ inputs.push_feature_branch }}" == "true" ]]; then
+              echo "- ✅ Image pushed to Docker Hub"
+            else
+              echo "- ℹ️ Image push skipped (feature branch)"
+            fi
             echo "- ✅ Security scan completed with Docker Scout"
             echo ""
-            echo "### 🐳 Pull Command"
-            echo "\`\`\`bash"
-            echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.build_number.outputs.BUILD_TAG }}"
-            echo "\`\`\`"
+            if [[ "${{ github.ref_name }}" == "${{ steps.repo_info.outputs.DEFAULT_BRANCH }}" || "${{ inputs.push_feature_branch }}" == "true" ]]; then
+              echo "### 🐳 Pull Command"
+              echo "\`\`\`bash"
+              echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.build_number.outputs.BUILD_TAG }}"
+              echo "\`\`\`"
+            fi
           } | tee -a "$GITHUB_STEP_SUMMARY" >> "$NOTES"
 
       - name: Append Auto-Generated Changelog
