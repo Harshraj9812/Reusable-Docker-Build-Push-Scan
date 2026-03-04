@@ -183,21 +183,30 @@ jobs:
           fi
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
 
-      - name: Prepare Release Body
+      - name: Debug Summary File
         if: ${{ inputs.create_git_tag }}
         run: |
-          cp "$GITHUB_STEP_SUMMARY" release-notes.md
+          echo "--- Debugging Summary File ---"
+          echo "Current directory: $(pwd)"
+          echo "Summary file path: $GITHUB_STEP_SUMMARY"
+          echo "--- Summary file content ---"
+          cat "$GITHUB_STEP_SUMMARY"
+          echo "--- End of summary content ---"
+          if [ ! -s "$GITHUB_STEP_SUMMARY" ]; then
+            echo "Error: Summary file is empty or does not exist."
+            exit 1
+          fi
 
       - name: Create Release
         if: ${{ inputs.create_git_tag }}
         id: create_release
-        uses: softprops/action-gh-release@v1
-        with:
-          body_path: release-notes.md
-          tag_name: ${{ steps.build_number.outputs.BUILD_TAG }}
-          name: Release ${{ steps.build_number.outputs.BUILD_TAG }}
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RELEASE_URL=$(cat "$GITHUB_STEP_SUMMARY" | gh release create ${{ steps.build_number.outputs.BUILD_TAG }} \
+            --title "Release ${{ steps.build_number.outputs.BUILD_TAG }}" \
+            --notes-file -)
+          echo "RELEASE_URL=$RELEASE_URL" >> $GITHUB_OUTPUT
 
       - name: Update Summary with Release Info
         if: ${{ inputs.create_git_tag }}
