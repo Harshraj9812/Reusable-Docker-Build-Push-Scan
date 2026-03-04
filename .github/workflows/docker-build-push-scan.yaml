@@ -170,18 +170,20 @@ jobs:
           fi
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
 
-      - name: Create Git tag
+      - name: Create Release
         if: ${{ inputs.create_git_tag }}
-        id: create_tag
+        id: create_release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
-          git tag -a "${{ steps.build_number.outputs.BUILD_TAG }}" -m "Release ${{ steps.build_number.outputs.BUILD_TAG }}"
-          git push origin "${{ steps.build_number.outputs.BUILD_TAG }}"
-          echo "## 🏷️ Git Tag Created" >> $GITHUB_STEP_SUMMARY
+          RELEASE_URL=$(gh release create ${{ steps.build_number.outputs.BUILD_TAG }} \
+            --title "Release ${{ steps.build_number.outputs.BUILD_TAG }}" \
+            --notes-file ${{ env.GITHUB_STEP_SUMMARY }})
+          echo "RELEASE_URL=$RELEASE_URL" >> $GITHUB_OUTPUT
+
+          echo "## 🏷️ Release Created" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Tag:** \`${{ steps.build_number.outputs.BUILD_TAG }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Repository:** ${{ github.repository }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Release:** [$RELEASE_URL]($RELEASE_URL)" >> $GITHUB_STEP_SUMMARY
 
       - name: Final Summary
         run: |
@@ -191,7 +193,7 @@ jobs:
           echo "- ✅ Docker image built with tag \`${{ steps.build_number.outputs.BUILD_TAG }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- ✅ Image pushed to Docker Hub" >> $GITHUB_STEP_SUMMARY
           if [[ "${{ inputs.create_git_tag }}" == "true" ]]; then
-            echo "- ✅ Git tag created: \`${{ steps.build_number.outputs.BUILD_TAG }}\`" >> $GITHUB_STEP_SUMMARY
+            echo "- ✅ Release created: [${{ steps.build_number.outputs.BUILD_TAG }}](${{ steps.create_release.outputs.RELEASE_URL }})" >> $GITHUB_STEP_SUMMARY
           fi
           echo "- ✅ Security scan completed with Docker Scout" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
