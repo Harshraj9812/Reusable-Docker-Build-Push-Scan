@@ -154,22 +154,60 @@ jobs:
 
       - name: Scan image with Docker Scout
         id: scout_scan
+        uses: docker/scout-action@v1
+        with:
+          command: cves
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.build_number.outputs.BUILD_TAG }}
+          only-severities: ${{ inputs.scout_severities }}
+          write-comment: false
+          summary: true
+          sarif-file: scout-results.sarif
+
+      - name: Docker Scout quickview
+        id: scout_quickview
+        uses: docker/scout-action@v1
+        with:
+          command: quickview
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.build_number.outputs.BUILD_TAG }}
+          write-comment: false
+          summary: true
+
+      - name: Capture Scout results for release notes
         run: |
-          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.build_number.outputs.BUILD_TAG }}"
           {
             echo "## 🔍 Security Scan"
             echo ""
-            echo "### Quick View"
-            echo '```'
-            docker scout quickview "$IMAGE" 2>&1 || true
-            echo '```'
+            if [ -f "scout-results.sarif" ]; then
+              TOTAL=$(jq '(.runs[0].results // []) | length' scout-results.sarif 2>/dev/null || echo 0)
+              CRITICAL=$(jq '[.runs[0].results[]? | select(.level == "error")] | length' scout-results.sarif 2>/dev/null || echo 0)
+              HIGH=$(jq '[.runs[0].results[]? | select(.level == "warning")] | length' scout-results.sarif 2>/dev/null || echo 0)
+              MEDIUM=$(jq '[.runs[0].results[]? | select(.level == "note")] | length' scout-results.sarif 2>/dev/null || echo 0)
+
+              echo "### CVE Summary (severities: \`${{ inputs.scout_severities }}\`)"
+              echo ""
+              echo "| Severity | Count |"
+              echo "|----------|-------|"
+              echo "| 🔴 Critical | $CRITICAL |"
+              echo "| 🟠 High | $HIGH |"
+              echo "| 🟡 Medium | $MEDIUM |"
+              echo ""
+
+              if [ "$TOTAL" -gt 0 ] 2>/dev/null; then
+                echo "### Vulnerabilities Found"
+                echo ""
+                echo "| CVE | Severity | Package |"
+                echo "|-----|----------|---------|"
+                jq -r '.runs[0].results[]? |
+                  "| \(.ruleId) | \(.level) | \((.locations // [])[0] | (.logicalLocations // [])[0] | .name // "unknown") |"
+                ' scout-results.sarif 2>/dev/null | head -30 || true
+              else
+                echo "✅ No vulnerabilities found for the specified severities."
+              fi
+            else
+              echo "> Scout results not available. See the [Actions run summary](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details."
+            fi
             echo ""
-            echo "### CVE Report (severities: \`${{ inputs.scout_severities }}\`)"
-            echo '```'
-            docker scout cves "$IMAGE" --only-severities "${{ inputs.scout_severities }}" 2>&1 || true
-            echo '```'
-            echo ""
-          } | tee -a "$GITHUB_STEP_SUMMARY" >> "$NOTES"
+          } >> "$NOTES"
 
       - name: Push to Docker Hub
         id: push
