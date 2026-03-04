@@ -154,29 +154,20 @@ jobs:
 
       - name: Scan image with Docker Scout
         id: scout_scan
-        uses: docker/scout-action@v1
-        with:
-          command: cves
-          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.build_number.outputs.BUILD_TAG }}
-          only-severities: ${{ inputs.scout_severities }}
-          write-comment: false
-          summary: true
-
-      - name: Docker Scout quickview
-        id: scout_quickview
-        uses: docker/scout-action@v1
-        with:
-          command: quickview
-          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.build_number.outputs.BUILD_TAG }}
-          write-comment: false
-          summary: true
-
-      - name: Append Scout note to release notes
         run: |
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.build_number.outputs.BUILD_TAG }}"
           {
             echo "## 🔍 Security Scan"
             echo ""
-            echo "> Docker Scout CVE scan and quickview results are available in the [Actions run summary](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})."
+            echo "### Quick View"
+            echo '```'
+            docker scout quickview "$IMAGE" 2>&1 || true
+            echo '```'
+            echo ""
+            echo "### CVE Report (severities: \`${{ inputs.scout_severities }}\`)"
+            echo '```'
+            docker scout cves "$IMAGE" --only-severities "${{ inputs.scout_severities }}" 2>&1 || true
+            echo '```'
             echo ""
           } | tee -a "$GITHUB_STEP_SUMMARY" >> "$NOTES"
 
@@ -223,15 +214,43 @@ jobs:
             echo "\`\`\`"
           } | tee -a "$GITHUB_STEP_SUMMARY" >> "$NOTES"
 
+      - name: Append Auto-Generated Changelog
+        if: ${{ inputs.create_git_tag }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BUILD_TAG="${{ steps.build_number.outputs.BUILD_TAG }}"
+          GENERATED=$(gh api "repos/${{ github.repository }}/releases/generate-notes" \
+            --method POST \
+            -f tag_name="$BUILD_TAG" \
+            --jq '.body' 2>/dev/null || echo "")
+
+          if [[ -n "$GENERATED" ]]; then
+            {
+              echo ""
+              echo "---"
+              echo "$GENERATED"
+            } | tee -a "$GITHUB_STEP_SUMMARY" >> "$NOTES"
+          fi
+
       - name: Create Release
         if: ${{ inputs.create_git_tag }}
         id: create_release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          RELEASE_URL=$(gh release create ${{ steps.build_number.outputs.BUILD_TAG }} \
-            --title "Release ${{ steps.build_number.outputs.BUILD_TAG }}" \
-            --notes-file "$NOTES")
+          BUILD_TAG="${{ steps.build_number.outputs.BUILD_TAG }}"
+          DEFAULT_BRANCH="${{ steps.repo_info.outputs.DEFAULT_BRANCH }}"
+
+          PRERELEASE_FLAG=""
+          if [[ "${{ github.ref_name }}" != "$DEFAULT_BRANCH" ]]; then
+            PRERELEASE_FLAG="--prerelease"
+          fi
+
+          RELEASE_URL=$(gh release create "$BUILD_TAG" \
+            --title "Release $BUILD_TAG" \
+            --notes-file "$NOTES" \
+            $PRERELEASE_FLAG)
 
           echo "RELEASE_URL=$RELEASE_URL" >> $GITHUB_OUTPUT
 
