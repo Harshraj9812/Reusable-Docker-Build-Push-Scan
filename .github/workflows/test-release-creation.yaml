@@ -1,0 +1,52 @@
+name: Test Release Creation
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Tag name for the test release (e.g. test-v1.0)"
+        required: true
+        default: "test-v1.0"
+
+jobs:
+  test-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Write content to step summary and release notes
+        run: |
+          NOTES="$GITHUB_WORKSPACE/release-notes.md"
+          {
+            echo "### 🏗️ Build Information"
+            echo ""
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| **Build Tag** | \`${{ inputs.tag_name }}\` |"
+            echo "| **Branch** | \`${{ github.ref_name }}\` |"
+            echo "| **Run Number** | ${{ github.run_number }} |"
+            echo "| **Commit SHA** | \`${{ github.sha }}\` |"
+            echo ""
+            echo "## ✨ Workflow Completed Successfully"
+            echo "- ✅ This is a test release"
+            echo "- ✅ Testing step summary as release body"
+          } | tee -a "$GITHUB_STEP_SUMMARY" >> "$NOTES"
+
+      - name: Debug - verify release-notes.md has content
+        run: |
+          echo "Line count: $(wc -l < "$GITHUB_WORKSPACE/release-notes.md")"
+          echo "--- Content ---"
+          cat "$GITHUB_WORKSPACE/release-notes.md"
+
+      - name: Create Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RELEASE_URL=$(gh release create "${{ inputs.tag_name }}" \
+            --title "Test Release ${{ inputs.tag_name }}" \
+            --notes-file "$GITHUB_WORKSPACE/release-notes.md")
+          echo "Release created: $RELEASE_URL"
