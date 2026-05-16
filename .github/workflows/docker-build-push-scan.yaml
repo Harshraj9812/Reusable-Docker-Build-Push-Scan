@@ -170,7 +170,7 @@ jobs:
         id: scout_scan
         uses: docker/scout-action@v1.20.4
         with:
-          command: cves,quickview
+          command: cves
           image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.build_number.outputs.BUILD_TAG }}
           only-severities: ${{ inputs.scout_severities }}
           only-fixed: true
