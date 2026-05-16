@@ -170,19 +170,9 @@ jobs:
         id: scout_scan
         uses: docker/scout-action@v1.20.4
         with:
-          command: cves
+          command: cves,quickview
           image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.build_number.outputs.BUILD_TAG }}
           only-severities: ${{ inputs.scout_severities }}
-          only-fixed: true
-          write-comment: false
-          summary: true
-
-      - name: Docker Scout quickview
-        id: scout_quickview
-        uses: docker/scout-action@v1.20.4
-        with:
-          command: quickview
-          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.build_number.outputs.BUILD_TAG }}
           only-fixed: true
           write-comment: false
           summary: true
